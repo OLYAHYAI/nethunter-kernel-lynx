@@ -27,6 +27,14 @@ jobs:
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           df -h /
 
+      - name: Ajouter du swap (link LTO GKI gourmand en RAM)
+        run: |
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Installer la toolchain (clang-17 + outils noyau)
         run: |
           sudo apt-get update

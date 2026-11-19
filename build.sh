@@ -67,16 +67,11 @@ if [ -n "${CLANG_DIR}" ] && [ -d "${CLANG_DIR}/bin" ]; then
   fi
   export LD_LIBRARY_PATH="${LIBS_DIR}:${LD_LIBRARY_PATH:-}"
 elif command -v clang-17 >/dev/null 2>&1; then
-  LLVM=""
-  export CC=clang-17
-  export LD=ld.lld-17
-  export AR=llvm-ar-17
-  export NM=llvm-nm-17
-  export OBJCOPY=llvm-objcopy-17
-  export OBJDUMP=llvm-objdump-17
-  export READELF=llvm-readelf-17
-  export STRIP=llvm-strip-17
-  LLVM=1
+  # SUFFIXE -17 : make construit clang-17/ld.lld-17/llvm-*-17 de facon
+  # coherente (cible ET host). Evite le melange clang-18 (compile LTO bitcode)
+  # / ld.lld-17 (link) sur ubuntu-24.04 qui donne :
+  #   ld.lld: error: Invalid record (Producer LLVM18.1.3 Reader LLVM 17.0.6)
+  LLVM="-17"
 else
   LLVM=1
   log "Utilisation du LLVM/Clang systeme (LLVM=1)."
