@@ -46,6 +46,8 @@ jobs:
             sudo update-alternatives --install /usr/bin/$t $t /usr/bin/$t-17 100 || true
           done
           clang --version
+          # pyelftools pour le realignement CRC post-build (patch_crcs.py)
+          pip3 install --quiet --break-system-packages pyelftools || pip3 install --quiet pyelftools
 
       - name: Build noyau + modules (.ko)
         run: |

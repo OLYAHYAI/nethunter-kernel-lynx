@@ -106,11 +106,18 @@ mkdir -p "${KERNEL_DIR}/arch/${ARCH}/configs"
 cp -f "${CONFIGS_DIR}/nethunter.config" "${KERNEL_DIR}/arch/${ARCH}/configs/"
 
 # ---------------------------------------------------------------------------
-# 3. Generation .config (gki_defconfig + fragment)
+# 3. Generation .config : base = CONFIG EXACTE DU DEVICE + fragment
 # ---------------------------------------------------------------------------
-log "3/7 : generation .config (gki_defconfig + nethunter.config)"
-make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" \
-  gki_defconfig nethunter.config
+# On part de la config reelle du Pixel 7a (configs/device-config.txt =
+# zcat /proc/config.gz). But : que les CRC du coeur (sk_buff, dev_*, ...)
+# matchent le device NATIVEMENT (meme config => meme genksyms => memes CRC).
+# merge_config applique le fragment par-dessus, olddefconfig resout les deps.
+# Les options vendor du device absentes du tree kernel/common sont ignorees.
+log "3/7 : generation .config (device-config.txt + nethunter.config)"
+cp -f "${CONFIGS_DIR}/device-config.txt" "${OUT_DIR}/.config.base"
+( cd "${KERNEL_DIR}" && ARCH="${ARCH}" scripts/kconfig/merge_config.sh -m \
+    -O "${OUT_DIR}" "${OUT_DIR}/.config.base" "${CONFIGS_DIR}/nethunter.config" )
+make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" olddefconfig
 
 # ---------------------------------------------------------------------------
 # 4. Compilation noyau + modules in-tree
@@ -214,6 +221,21 @@ cp -f "${OUT_DIR}/arch/${ARCH}/boot/Image.gz" "${OUTPUT_DIR}/" 2>/dev/null || tr
 cp -f "${OUT_DIR}/Module.symvers"             "${OUTPUT_DIR}/" 2>/dev/null || true
 cp -f "${OUT_DIR}/System.map"                 "${OUTPUT_DIR}/" 2>/dev/null || true
 cp -f "${OUT_DIR}/.config"                    "${OUTPUT_DIR}/" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# 6bis. Realignement des CRC wireless sur le device
+# ---------------------------------------------------------------------------
+# Les modules in-tree (rt2x00*, rt2800*) ont ete modpost-es contre NOTRE
+# mac80211/cfg80211 (buildes ici) -> leurs CRC des symboles ieee80211_*/wiphy_*
+# ne matchent pas ceux du mac80211/cfg80211 GKI charges sur le device
+# (Google les build avec sa propre config). On reecrit donc, dans la section
+# __versions de chaque .ko, les CRC de ces symboles avec les valeurs EXACTES
+# exportees par le device (configs/phone_wireless.symvers, extrait des
+# mac80211.ko/cfg80211.ko du telephone). Sans danger : meme source 6.1.157,
+# ABI mac80211/cfg80211 stable (KMI GKI) -> seul le hash genksyms differait.
+log "6bis : realignement CRC wireless (phone_wireless.symvers)"
+python3 -c 'import elftools' 2>/dev/null || pip3 install --quiet --break-system-packages pyelftools 2>/dev/null || pip3 install --quiet pyelftools 2>/dev/null || true
+python3 "${ROOT_DIR}/patch_crcs.py" "${CONFIGS_DIR}/phone_wireless.symvers" "${OUTPUT_DIR}/modules"
 
 # ---------------------------------------------------------------------------
 # 7. Resume + verification vermagic
