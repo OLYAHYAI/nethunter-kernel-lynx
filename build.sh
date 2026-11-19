@@ -114,6 +114,7 @@ cp -f "${CONFIGS_DIR}/nethunter.config" "${KERNEL_DIR}/arch/${ARCH}/configs/"
 # merge_config applique le fragment par-dessus, olddefconfig resout les deps.
 # Les options vendor du device absentes du tree kernel/common sont ignorees.
 log "3/7 : generation .config (device-config.txt + nethunter.config)"
+mkdir -p "${OUT_DIR}"
 cp -f "${CONFIGS_DIR}/device-config.txt" "${OUT_DIR}/.config.base"
 ( cd "${KERNEL_DIR}" && ARCH="${ARCH}" scripts/kconfig/merge_config.sh -m \
     -O "${OUT_DIR}" "${OUT_DIR}/.config.base" "${CONFIGS_DIR}/nethunter.config" )
