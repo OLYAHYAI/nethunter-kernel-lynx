@@ -27,12 +27,14 @@ jobs:
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           df -h /
 
-      - name: Ajouter du swap (link LTO GKI gourmand en RAM)
+      - name: Ajouter du swap (filet RAM, best-effort)
+        continue-on-error: true
         run: |
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # Le runner a deja un /swapfile actif -> on en ajoute un autre sur /mnt.
+          sudo fallocate -l 12G /mnt/ci-swap || sudo dd if=/dev/zero of=/mnt/ci-swap bs=1M count=12288
+          sudo chmod 600 /mnt/ci-swap
+          sudo mkswap /mnt/ci-swap
+          sudo swapon /mnt/ci-swap || true
           free -h
 
       - name: Installer la toolchain (clang-17 + outils noyau)
