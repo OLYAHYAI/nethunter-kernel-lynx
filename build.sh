@@ -3,11 +3,13 @@
 # build.sh — Kernel Kali NetHunter pour Google Pixel 7a (lynx)
 #            GKI android14-6.1 — methode LKM (modules chargeables .ko)
 #
-# Cible EXACTE :
-#   kernel/common  branche android14-6.1, commit edaaac4d5c85
-#   noyau 6.1.145-android14 (KMI generation 11)
-#   vermagic : 6.1.145-android14-11-gedaaac4d5c85 SMP preempt mod_unload
-#              modversions aarch64
+# Cible EXACTE (device OLYAHYAI, releve 2026-11-19) :
+#   kernel/common  branche android14-6.1, commit b3d4cdadf339
+#   noyau 6.1.157-android14 (KMI generation 11), build GKI ab16160610
+#   uname -r device : 6.1.157-android14-11-gb3d4cdadf339-ab16160610
+#   Rappel MODVERSIONS : le noyau ignore la chaine de version du vermagic
+#   (coupe avant le 1er espace) ; seuls les FLAGS + les CRC de symboles
+#   comptent. D'ou l'alignement CRC ci-dessous sur ab16160610.
 #
 # Usage :
 #   ./build.sh                  # build complet (noyau + modules + pilotes)
@@ -35,7 +37,9 @@ CONFIGS_DIR="${ROOT_DIR}/configs"
 PATCHES_DIR="${ROOT_DIR}/patches"
 
 BRANCH="${BRANCH:-android14-6.1}"
-COMMIT="${COMMIT:-edaaac4d5c85cb9fb220767a9e5f859cb730fb27}"
+# Cible device OLYAHYAI : uname -r = 6.1.157-android14-11-gb3d4cdadf339-ab16160610
+COMMIT="${COMMIT:-b3d4cdadf339}"
+GKI_BUILD="${GKI_BUILD:-16160610}"
 KMI_GENERATION="${KMI_GENERATION:-11}"
 KERNEL_URL="https://android.googlesource.com/kernel/common"
 JOBS="${JOBS:-$(nproc)}"
@@ -84,8 +88,11 @@ fi
 log "1/7 : sources GKI ${BRANCH} @ ${COMMIT}"
 mkdir -p "${ROOT_DIR}/kernel"
 if [ ! -d "${KERNEL_DIR}/.git" ]; then
-  git clone --depth 1 -b "${BRANCH}" "${KERNEL_URL}" "${KERNEL_DIR}"
-  ( cd "${KERNEL_DIR}" && git fetch --depth 1 origin "${COMMIT}" && git checkout "${COMMIT}" )
+  # Partial clone (blob:none) : tout l'historique commits/trees sans les blobs.
+  # Permet un checkout par hash COURT (b3d4cdadf339) sans connaitre le SHA
+  # complet, reste leger, et telecharge les blobs du commit a la demande.
+  git clone --filter=blob:none -b "${BRANCH}" "${KERNEL_URL}" "${KERNEL_DIR}"
+  ( cd "${KERNEL_DIR}" && git checkout "${COMMIT}" )
 else
   log "  deja clone : ${KERNEL_DIR} (verifier commit = ${COMMIT})"
 fi
@@ -120,17 +127,16 @@ make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" \
 # ---------------------------------------------------------------------------
 # 4bis. Verification & Alignement de Module.symvers (Google GKI ab16017558)
 # ---------------------------------------------------------------------------
-EXPECTED_CRC="0xea759d7f"
+OFFICIAL_SYMVERS="${CONFIGS_DIR}/vmlinux.symvers-ab${GKI_BUILD}"
+if [ ! -f "${OFFICIAL_SYMVERS}" ]; then
+  log "  Telechargement du vmlinux.symvers officiel (ab${GKI_BUILD})..."
+  curl -s -L "https://ci.android.com/builds/submitted/${GKI_BUILD}/kernel_aarch64/latest/raw/vmlinux.symvers" -o "${OFFICIAL_SYMVERS}" || true
+fi
+EXPECTED_CRC=$(grep -w "module_layout" "${OFFICIAL_SYMVERS}" 2>/dev/null | awk '{print $1}')
 ACTUAL_CRC=$(grep -w "module_layout" "${OUT_DIR}/Module.symvers" 2>/dev/null | awk '{print $1}')
 log "Verification CRC module_layout :"
-log "  Attendu (Google GKI ab16017558) : ${EXPECTED_CRC}"
-log "  Actuel (notre build)            : ${ACTUAL_CRC:-introuvable}"
-
-OFFICIAL_SYMVERS="${CONFIGS_DIR}/vmlinux.symvers-ab16017558"
-if [ ! -f "${OFFICIAL_SYMVERS}" ]; then
-  log "  Telechargement du vmlinux.symvers officiel (ab16017558)..."
-  curl -s -L "https://ci.android.com/builds/submitted/16017558/kernel_aarch64/latest/raw/vmlinux.symvers" -o "${OFFICIAL_SYMVERS}" || true
-fi
+log "  Attendu (Google GKI ab${GKI_BUILD}) : ${EXPECTED_CRC:-inconnu}"
+log "  Actuel (notre build)              : ${ACTUAL_CRC:-introuvable}"
 
 if [ -f "${OFFICIAL_SYMVERS}" ]; then
   log "  Alignement de Module.symvers avec les symboles officiels GKI..."
