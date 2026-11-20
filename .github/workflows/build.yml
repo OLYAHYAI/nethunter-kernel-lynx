@@ -57,9 +57,11 @@ jobs:
           ./build.sh
 
       - name: Assembler le module Magisk
+        # Seulement si build.sh (porte de verif ABI incluse) a reussi.
         run: ./build-magisk.sh 6.1.157
 
       - name: Verifier vermagic des .ko produits
+        if: ${{ always() }}
         run: |
           echo "=== vermagic rt2800usb.ko ==="
           modinfo output/modules/rt2800usb.ko | grep -E 'vermagic|name' || true
@@ -67,6 +69,9 @@ jobs:
           ls -la output/modules/*.ko
 
       - name: Upload artefacts (.ko + zip Magisk)
+        # always() : on remonte les .ko MEME si la porte de verif ABI a echoue,
+        # pour pouvoir les inspecter / relancer verify_wireless_abi.py en local.
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: nethunter-lynx-6.1.157-ab16160610
@@ -75,5 +80,5 @@ jobs:
             output/*.zip
             output/Module.symvers
             output/.config
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30

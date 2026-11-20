@@ -155,11 +155,18 @@ fi
 # matchent le device NATIVEMENT (meme config => meme genksyms => memes CRC).
 # merge_config applique le fragment par-dessus, olddefconfig resout les deps.
 # Les options vendor du device absentes du tree kernel/common sont ignorees.
-log "3/7 : generation .config (device-config.txt + nethunter.config)"
+log "3/7 : generation .config (device-config.txt + nethunter.config + wireless-abi.config)"
 mkdir -p "${OUT_DIR}"
 cp -f "${CONFIGS_DIR}/device-config.txt" "${OUT_DIR}/.config.base"
+# VOIE A : wireless-abi.config aligne les 5 options qui conditionnent le layout
+# des struct ieee80211_ops/ieee80211_hw/wiphy (PM, IPV6, MAC80211_DEBUGFS,
+# NL80211_TESTMODE, CFG80211_WEXT) sur le mac80211/cfg80211 du device. Sans ca,
+# olddefconfig prend des defauts != gs-6.1 -> CRC ieee80211_alloc_hw_nm faux
+# -> WARN runtime. Applique EN DERNIER pour primer sur les defauts.
 ( cd "${KERNEL_DIR}" && ARCH="${ARCH}" scripts/kconfig/merge_config.sh -m \
-    -O "${OUT_DIR}" "${OUT_DIR}/.config.base" "${CONFIGS_DIR}/nethunter.config" )
+    -O "${OUT_DIR}" "${OUT_DIR}/.config.base" \
+    "${CONFIGS_DIR}/nethunter.config" \
+    "${CONFIGS_DIR}/wireless-abi.config" )
 make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" olddefconfig
 
 # Garde-fou rapide : verifier que les LED rt2x00 sont bien coupees (sinon
@@ -204,16 +211,14 @@ if [ -f "${OFFICIAL_SYMVERS}" ]; then
   log "  CRC module_layout final dans Module.symvers : ${FINAL_CRC}"
 fi
 
-WIRELESS_SYMVERS="${CONFIGS_DIR}/phone_wireless.symvers"
-if [ -f "${WIRELESS_SYMVERS}" ]; then
-  log "  Alignement de Module.symvers avec les symboles wireless du device..."
-  awk '$3 !~ /^net\/(wireless|mac80211)/' "${OUT_DIR}/Module.symvers" > "${OUT_DIR}/Module.symvers.nowireless"
-  cat "${OUT_DIR}/Module.symvers.nowireless" "${WIRELESS_SYMVERS}" > "${OUT_DIR}/Module.symvers.aligned"
-  mv -f "${OUT_DIR}/Module.symvers.aligned" "${OUT_DIR}/Module.symvers"
-  rm -f "${OUT_DIR}/Module.symvers.nowireless"
-  WIPHY_CRC=$(grep -w "wiphy_register" "${OUT_DIR}/Module.symvers" 2>/dev/null | awk '{print $1}')
-  log "  CRC wiphy_register final dans Module.symvers : ${WIPHY_CRC}"
-fi
+# VOIE A : on NE seed PLUS Module.symvers avec phone_wireless.symvers.
+# Les CRC wireless (ieee80211_*/wiphy_*) doivent etre ceux que NOTRE mac80211/
+# cfg80211 vient de produire NATIVEMENT (avec wireless-abi.config aligne sur le
+# device). modpost va stamper les .ko avec ces CRC natifs ; la porte de verif
+# (etape 6bis) confirme qu'ils == device. Seeder ici reviendrait a re-masquer le
+# mismatch (comme l'ancien patch_crcs.py) et a rendre la verif aveugle.
+# NB : on GARDE l'alignement vmlinux/GKI ci-dessus (module_layout & co) : les
+# modules se chargent bien contre le vmlinux GKI ab${GKI_BUILD}, c'est correct.
 
 # ---------------------------------------------------------------------------
 # 5. Pilotes out-of-tree (RTL8812AU / RTL8188EU)
@@ -277,19 +282,27 @@ cp -f "${OUT_DIR}/System.map"                 "${OUTPUT_DIR}/" 2>/dev/null || tr
 cp -f "${OUT_DIR}/.config"                    "${OUTPUT_DIR}/" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# 6bis. Realignement des CRC wireless sur le device
+# 6bis. PORTE DE VERIFICATION ABI wireless (remplace patch_crcs.py)
 # ---------------------------------------------------------------------------
-# Les modules in-tree (rt2x00*, rt2800*) ont ete modpost-es contre NOTRE
-# mac80211/cfg80211 (buildes ici) -> leurs CRC des symboles ieee80211_*/wiphy_*
-# ne matchent pas ceux du mac80211/cfg80211 GKI charges sur le device
-# (Google les build avec sa propre config). On reecrit donc, dans la section
-# __versions de chaque .ko, les CRC de ces symboles avec les valeurs EXACTES
-# exportees par le device (configs/phone_wireless.symvers, extrait des
-# mac80211.ko/cfg80211.ko du telephone). Sans danger : meme source 6.1.157,
-# ABI mac80211/cfg80211 stable (KMI GKI) -> seul le hash genksyms differait.
-log "6bis : realignement CRC wireless (phone_wireless.symvers)"
+# VOIE A : on ne MAQUILLE plus les CRC. On VERIFIE que les .ko produits portent
+# DEJA, nativement, les CRC exportes par le mac80211/cfg80211 du device
+# (configs/phone_wireless.symvers). Si oui -> les modules chargeront sans
+# "disagrees about version of symbol" ET sans WARN ieee80211_alloc_hw (le layout
+# de struct correspond, grace a wireless-abi.config). Si non -> echec ICI, avec
+# le diff exact des symboles divergents, AVANT tout flash. (ancien patch_crcs.py
+# conserve dans le repo pour reference, mais plus appele.)
+log "6bis : verification ABI wireless (verify_wireless_abi.py)"
 python3 -c 'import elftools' 2>/dev/null || pip3 install --quiet --break-system-packages pyelftools 2>/dev/null || pip3 install --quiet pyelftools 2>/dev/null || true
-python3 "${ROOT_DIR}/patch_crcs.py" "${CONFIGS_DIR}/phone_wireless.symvers" "${OUTPUT_DIR}/modules"
+python3 "${ROOT_DIR}/verify_wireless_abi.py" \
+    "${CONFIGS_DIR}/phone_wireless.symvers" "${OUTPUT_DIR}/modules"
+VERIFY_RC=$?
+if [ "${VERIFY_RC}" -ne 0 ]; then
+  err "ABI wireless NON conforme au device (voir diff ci-dessus)."
+  err "=> NE PAS flasher ces .ko. Ajuster configs/wireless-abi.config"
+  err "   (typiquement basculer CONFIG_NL80211_TESTMODE) et relancer,"
+  err "   ou passer a la Voie A clean (repo sync). Voir docs/VOIE-A.md."
+  exit "${VERIFY_RC}"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Resume + verification vermagic
