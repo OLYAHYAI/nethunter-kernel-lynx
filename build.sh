@@ -118,6 +118,17 @@ if [ -f "${RT2X00_KCONFIG}" ]; then
   grep -A3 '^config RT2X00_LIB_LEDS$' "${RT2X00_KCONFIG}" | sed 's/^/     /'
 fi
 
+# Patch source : retirer le PROMPT de MAC80211_LEDS -> symbole promptless, defaut
+# n (rien ne le select-e) -> CONFIG_MAC80211_LEDS=n. Consequence : l'inline
+# ieee80211_create_tpt_led_trigger() de include/net/mac80211.h devient le stub
+# (#else, retourne NULL) -> rt2x00lib ne refere plus __ieee80211_create_tpt_led_trigger
+# (symbole absent du device car son mac80211 est aussi build sans MAC80211_LEDS).
+MAC80211_KCONFIG="${KERNEL_DIR}/net/mac80211/Kconfig"
+if [ -f "${MAC80211_KCONFIG}" ]; then
+  sed -i 's/^\([[:space:]]*\)bool "Enable LED triggers"$/\1bool/' "${MAC80211_KCONFIG}"
+  log "   MAC80211_LEDS : prompt retire (-> default n)"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Generation .config : base = CONFIG EXACTE DU DEVICE + fragment
 # ---------------------------------------------------------------------------
@@ -138,9 +149,9 @@ make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" olddefconfi
 # du device -> err -2). Echec en ~1 min plutot qu'apres 10 min de compilation.
 log "3b : verif config LED (rt2x00)"
 grep -E 'CONFIG_(NEW_LEDS|LEDS_CLASS|RT2X00_LIB_LEDS|MAC80211_LEDS)(=| is not set)' "${OUT_DIR}/.config" || true
-if grep -q '^CONFIG_RT2X00_LIB_LEDS=y' "${OUT_DIR}/.config"; then
-  echo "[build][ERREUR] RT2X00_LIB_LEDS encore =y : une option selectionne LEDS_CLASS." >&2
-  echo "  -> identifier le selecteur et l'ajouter au fragment." >&2
+if grep -qE '^CONFIG_(RT2X00_LIB_LEDS|MAC80211_LEDS)=y' "${OUT_DIR}/.config"; then
+  echo "[build][ERREUR] RT2X00_LIB_LEDS ou MAC80211_LEDS encore =y." >&2
+  grep -E '^CONFIG_(RT2X00_LIB_LEDS|MAC80211_LEDS)=y' "${OUT_DIR}/.config" >&2
   exit 1
 fi
 
