@@ -120,6 +120,17 @@ cp -f "${CONFIGS_DIR}/device-config.txt" "${OUT_DIR}/.config.base"
     -O "${OUT_DIR}" "${OUT_DIR}/.config.base" "${CONFIGS_DIR}/nethunter.config" )
 make -C "${KERNEL_DIR}" O="${OUT_DIR}" ARCH="${ARCH}" LLVM="${LLVM}" olddefconfig
 
+# Garde-fou rapide : verifier que les LED rt2x00 sont bien coupees (sinon
+# rt2x00lib refere __ieee80211_create_tpt_led_trigger / led_classdev_* absents
+# du device -> err -2). Echec en ~1 min plutot qu'apres 10 min de compilation.
+log "3b : verif config LED (rt2x00)"
+grep -E 'CONFIG_(NEW_LEDS|LEDS_CLASS|RT2X00_LIB_LEDS|MAC80211_LEDS)(=| is not set)' "${OUT_DIR}/.config" || true
+if grep -q '^CONFIG_RT2X00_LIB_LEDS=y' "${OUT_DIR}/.config"; then
+  echo "[build][ERREUR] RT2X00_LIB_LEDS encore =y : une option selectionne LEDS_CLASS." >&2
+  echo "  -> identifier le selecteur et l'ajouter au fragment." >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # 4. Compilation noyau + modules in-tree
 # ---------------------------------------------------------------------------
