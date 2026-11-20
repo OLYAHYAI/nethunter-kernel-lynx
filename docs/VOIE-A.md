@@ -41,15 +41,16 @@ rt2x00 importe — sont :
 | `CONFIG_PM` | `y` | device-config.txt |
 | `CONFIG_IPV6` | `y` | device-config.txt |
 | `CONFIG_MAC80211_DEBUGFS` | `n` | .ko device (debugfs quasi absent) |
-| `CONFIG_CFG80211_WEXT` | `y` (tres probable) | device a `WIRELESS_EXT=y` |
-| `CONFIG_NL80211_TESTMODE` | **inconnu** | seule vraie inconnue |
+| `CONFIG_CFG80211_WEXT` | `n` | **.ko device : AUCUN symbole wext dans cfg80211.ko** |
+| `CONFIG_NL80211_TESTMODE` | `y` | .ko device (`ieee80211_testmode_cmd` present) |
 
 **`CONFIG_MAC80211_MESH` n'y figure pas** : le mesh ne touche pas ces struct,
 c'etait une fausse piste pour le CRC.
 
-Ces 5 valeurs sont dans `configs/wireless-abi.config`, applique en dernier dans
-`build.sh`. La seule inconnue est `NL80211_TESTMODE` (pose a `y`) : 1 bit, donc
-au pire 2 builds.
+Les 5 valeurs sont **vérifiées sur les .ko réels du device** (présence/absence de
+symboles) et posées dans `configs/wireless-abi.config`, appliqué en dernier dans
+`build.sh`. 1er essai (2026-11-20) : WEXT mis à `y` par erreur -> 22 mismatches
+CRC (un champ en plus dans `struct wiphy`). Corrigé à `n`.
 
 ## 3. La porte de verification (remplace le maquillage)
 
