@@ -129,6 +129,24 @@ if [ -f "${MAC80211_KCONFIG}" ]; then
   log "   MAC80211_LEDS : prompt retire (-> default n)"
 fi
 
+# Patch source : neutraliser clk_get_sys() dans rt2800lib.c. C'est une API
+# d'horloge legacy (clkdev) pour les Ralink en SoC embarque, non exportee par
+# le noyau arm64 du device (err -2), inutile pour l'USB. On injecte une macro
+# APRES le dernier #include (donc apres la declaration de linux/clk.h -> pas de
+# collision avec le prototype) qui remplace l'appel par NULL.
+RT2800LIB_C="${KERNEL_DIR}/drivers/net/wireless/ralink/rt2x00/rt2800lib.c"
+if [ -f "${RT2800LIB_C}" ] && grep -q 'clk_get_sys' "${RT2800LIB_C}"; then
+  log "   clk_get_sys trouve dans rt2800lib.c, contexte :"
+  grep -n -C2 'clk_get_sys' "${RT2800LIB_C}" | sed 's/^/     /' | head -20
+  LASTINC=$(grep -n '^#include' "${RT2800LIB_C}" | tail -1 | cut -d: -f1)
+  if [ -n "${LASTINC}" ]; then
+    sed -i "${LASTINC}a #define clk_get_sys(a,b) ((struct clk *)0)" "${RT2800LIB_C}"
+    log "   macro clk_get_sys->NULL injectee apres la ligne ${LASTINC}"
+  fi
+else
+  log "   (pas de clk_get_sys dans rt2800lib.c ou fichier absent)"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Generation .config : base = CONFIG EXACTE DU DEVICE + fragment
 # ---------------------------------------------------------------------------
