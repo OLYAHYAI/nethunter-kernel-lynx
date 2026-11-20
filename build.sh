@@ -105,6 +105,19 @@ log "2/7 : installation du fragment nethunter.config"
 mkdir -p "${KERNEL_DIR}/arch/${ARCH}/configs"
 cp -f "${CONFIGS_DIR}/nethunter.config" "${KERNEL_DIR}/arch/${ARCH}/configs/"
 
+# Patch source : forcer RT2X00_LIB_LEDS a 'default n'. Ce symbole est SANS prompt
+# (auto 'default y' des que LEDS_CLASS=y, et un driver de la config device
+# select-e LEDS_CLASS) -> impossible a couper par .config. On change le defaut
+# dans le Kconfig pour que rt2x00lib ne compile PAS son code LED, qui refere
+# __ieee80211_create_tpt_led_trigger + led_classdev_suspend/resume (err -2,
+# absents du device: led_classdev_suspend/resume ont ete retires en 6.0).
+RT2X00_KCONFIG="${KERNEL_DIR}/drivers/net/wireless/ralink/rt2x00/Kconfig"
+if [ -f "${RT2X00_KCONFIG}" ]; then
+  sed -i '/^config RT2X00_LIB_LEDS$/,/^config [A-Z0-9_]/ s/^[[:space:]]*default y/\tdefault n/' "${RT2X00_KCONFIG}"
+  log "   RT2X00_LIB_LEDS force a default n :"
+  grep -A3 '^config RT2X00_LIB_LEDS$' "${RT2X00_KCONFIG}" | sed 's/^/     /'
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Generation .config : base = CONFIG EXACTE DU DEVICE + fragment
 # ---------------------------------------------------------------------------
